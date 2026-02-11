@@ -1,0 +1,27 @@
+/* ViewCart.css */
+.view-cart {
+    padding: 20px;
+  }
+  
+  .cart-items {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .cart-item {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+  }
+  
+  .cart-item img {
+    width: 100px;
+    height: auto;
+    border: 1px solid #ccc;
+  }
+  
+  .item-details {
+    flex: 1;
+  }
+  
