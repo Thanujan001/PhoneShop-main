@@ -52,7 +52,7 @@ function AdminDashboard() {
   return (
     <>
       <div className="bg-[#d9d9d9] min-h-screen py-20">
-        <h1 className="text-center text-3xl font-semibold text-gray-800 mb-12">
+        <h1 className="text-center text-3xl font-semibold text-red-800 mb-12">
           Product Details
         </h1>
 
