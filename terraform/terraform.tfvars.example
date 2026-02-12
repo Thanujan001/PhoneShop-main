@@ -1,0 +1,52 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+# Azure Configuration
+subscription_id = "your-subscription-id"
+location        = "eastus"
+
+# Project Configuration
+project_name = "phoneshop"
+environment  = "dev"
+
+# Container Registry
+container_registry_name = "phoneshopacr"
+docker_image_tag       = "latest"
+
+# Server Configuration
+server_image    = "phoneshopacr.azurecr.io/server:latest"
+server_memory   = "1"
+server_cpu      = "0.5"
+server_port     = 5000
+server_replicas = 2
+
+# Client Configuration
+client_image    = "phoneshopacr.azurecr.io/client:latest"
+client_memory   = "0.5"
+client_cpu      = "0.25"
+client_port     = 3000
+client_replicas = 2
+
+# Admin Configuration
+admin_image    = "phoneshopacr.azurecr.io/admin:latest"
+admin_memory   = "0.5"
+admin_cpu      = "0.25"
+admin_port     = 3000
+admin_replicas = 1
+
+# Database Configuration
+mongodb_admin_username = "mongodbadmin"
+# mongodb_admin_password must be set - generate a strong password
+# mongodb_admin_password = "YourSecurePasswordHere"
+mongodb_database_name = "mydatabase"
+mongodb_storage_gb    = 10
+
+# Application Secrets (Optional)
+# stripe_api_key = "your-stripe-key"
+# jwt_secret     = "your-jwt-secret"
+
+# Tags
+tags = {
+  Environment = "PhoneShop"
+  ManagedBy   = "Terraform"
+  Team        = "Development"
+}
