@@ -1,77 +1,3 @@
-// pipeline {
-//     agent any
-
-//     environment {
-//         DOCKER_HUB_CREDS = credentials('docker')
-//         DOCKER_USERNAME = "${DOCKER_HUB_CREDS_USR}"
-//         DOCKER_PASSWORD = "${DOCKER_HUB_CREDS_PSW}"
-//         VITE_BACKEND_URL = credentials('vite-backend-url')
-//     }
-
-//     triggers {
-//         githubPush()
-//     }
-
-//     stages {
-//         stage('Checkout Code') {
-//             steps {
-//                 checkout scmGit(
-//                     branches: [[name: 'main']],
-//                     userRemoteConfigs: [[url: 'https://github.com/Thanujan001/PhoneShop-main.git']]
-//                 )
-//             }
-//         }
-
-//         stage('Build Docker Images') {
-//             steps {
-//                 script {
-//                     docker.build("$DOCKER_USERNAME/phoneshop-server:latest", "./server")
-//                     docker.build("$DOCKER_USERNAME/phoneshop-client:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./client")
-//                     docker.build("$DOCKER_USERNAME/phoneshop-admin:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./admin")
-//                 }
-//             }
-//         }
-
-//         stage('Push Docker Images') {
-//             steps {
-//                 script {
-//                     docker.withRegistry('', 'docker') {
-//                         docker.image("$DOCKER_USERNAME/phoneshop-server:latest").push()
-//                         docker.image("$DOCKER_USERNAME/phoneshop-client:latest").push()
-//                         docker.image("$DOCKER_USERNAME/phoneshop-admin:latest").push()
-//                     }
-//                 }
-//             }
-//         }
-
-//         stage('Deploy to AWS') {
-//             steps {
-//                 script {
-//                     sh '''
-//                         # Login to ECR
-//                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-
-//                         # Update ECS Services
-//                         aws ecs update-service --cluster cluster-phoneshop-dev --service server --force-new-deployment
-//                         aws ecs update-service --cluster cluster-phoneshop-dev --service client --force-new-deployment
-//                         aws ecs update-service --cluster cluster-phoneshop-dev --service admin --force-new-deployment
-//                     '''
-//                 }
-//             }
-//         }
-//     }
-
-//     post {
-//         success {
-//             echo '✅ Pipeline completed successfully!'
-//         }
-//         failure {
-//             echo '❌ Pipeline failed!'
-//         }
-//     }
-// }
-
-
 pipeline {
     agent any
 
@@ -80,6 +6,8 @@ pipeline {
         DOCKER_USERNAME = "${DOCKER_HUB_CREDS_USR}"
         DOCKER_PASSWORD = "${DOCKER_HUB_CREDS_PSW}"
         VITE_BACKEND_URL = credentials('vite-backend-url')
+        AWS_REGION = credentials('aws-region')   // make sure you have this credential
+        ECR_REGISTRY = credentials('ecr-registry') // make sure you have this too
     }
 
     triggers {
@@ -87,14 +15,13 @@ pipeline {
     }
 
     stages {
+
         stage('Cleanup Old Directories') {
             steps {
                 script {
-                    // Delete old directories if they exist
                     sh '''
-                        rm -rf ./server
-                        rm -rf ./client
-                        rm -rf ./admin
+                        echo "Cleaning old directories..."
+                        rm -rf ./server ./client ./admin
                     '''
                 }
             }
@@ -112,9 +39,12 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 script {
-                    docker.build("$DOCKER_USERNAME/phoneshop-server:latest", "./server")
-                    docker.build("$DOCKER_USERNAME/phoneshop-client:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./client")
-                    docker.build("$DOCKER_USERNAME/phoneshop-admin:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./admin")
+                    sh '''
+                        echo "Building Docker images..."
+                        docker compose build server
+                        docker compose build client --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL}
+                        docker compose build admin --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL}
+                    '''
                 }
             }
         }
@@ -122,23 +52,27 @@ pipeline {
         stage('Push Docker Images') {
             steps {
                 script {
-                    docker.withRegistry('', 'docker') {
-                        docker.image("$DOCKER_USERNAME/phoneshop-server:latest").push()
-                        docker.image("$DOCKER_USERNAME/phoneshop-client:latest").push()
-                        docker.image("$DOCKER_USERNAME/phoneshop-admin:latest").push()
-                    }
+                    sh '''
+                        echo "Logging in to Docker Hub..."
+                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+                        echo "Pushing Docker images..."
+                        docker compose push server
+                        docker compose push client
+                        docker compose push admin
+                    '''
                 }
             }
         }
 
-        stage('Deploy to AWS') {
+        stage('Deploy to AWS ECS') {
             steps {
                 script {
                     sh '''
-                        # Login to ECR
+                        echo "Logging in to AWS ECR..."
                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
-                        # Update ECS Services
+                        echo "Updating ECS services..."
                         aws ecs update-service --cluster cluster-phoneshop-dev --service server --force-new-deployment
                         aws ecs update-service --cluster cluster-phoneshop-dev --service client --force-new-deployment
                         aws ecs update-service --cluster cluster-phoneshop-dev --service admin --force-new-deployment
@@ -150,11 +84,9 @@ pipeline {
         stage('Final Cleanup') {
             steps {
                 script {
-                    // Delete directories after pipeline finishes
                     sh '''
-                        rm -rf ./server
-                        rm -rf ./client
-                        rm -rf ./admin
+                        echo "Cleaning workspace directories..."
+                        rm -rf ./server ./client ./admin
                     '''
                 }
             }
