@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_USERNAME = credentials('docker-username')   // Docker Hub username credential ID
-        DOCKER_PASSWORD = credentials('docker-password')   // Docker Hub password/ token credential ID
+        DOCKER_CREDS = credentials('docker-hub')   // Single Docker Hub credential ID
         VITE_BACKEND_URL = credentials('vite-backend-url') // Your backend URL credential ID
     }
 
@@ -43,7 +42,7 @@ pipeline {
             steps {
                 sh '''
                     echo "Logging in to Docker Hub..."
-                    echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                    echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin
 
                     echo "Pushing Docker images..."
                     docker compose push server
