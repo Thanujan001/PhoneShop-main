@@ -1,14 +1,15 @@
 #!/bin/bash
 
-# Phone Shop Terraform Deployment Script for WSL
+# Phone Shop Terraform Deployment Script for AWS
 
 echo "========================================"
-echo "Phone Shop Terraform Deployment"
+echo "Phone Shop Terraform Deployment (AWS)"
 echo "========================================"
 echo ""
 
 # Step 1: Navigate to terraform directory
-cd /mnt/g/Projects/PhoneShop-main/terraform
+# Adjust path if needed
+cd "$(dirname "$0")"
 echo "✓ Changed to terraform directory"
 echo ""
 
@@ -17,25 +18,22 @@ if [ ! -f "terraform.tfvars" ]; then
     echo "📋 Creating terraform.tfvars from example..."
     cp terraform.tfvars.example terraform.tfvars
     echo "✓ File created. Edit with your values:"
-    echo "  - subscription_id"
+    echo "  - aws_region"
     echo "  - mongodb_admin_password"
-    echo "  - server_image, client_image, admin_image"
     echo ""
-    echo "  Run: nano terraform.tfvars"
     exit 0
 fi
 
-# Step 3: Verify Azure login
-echo "🔐 Checking Azure authentication..."
-if ! az account show > /dev/null 2>&1; then
-    echo "❌ Not authenticated with Azure"
-    echo "Please run: az login --use-device-code"
-    echo "Then visit: https://microsoft.com/devicelogin"
+# Step 3: Verify AWS login
+echo "🔐 Checking AWS authentication..."
+if ! aws sts get-caller-identity > /dev/null 2>&1; then
+    echo "❌ Not authenticated with AWS"
+    echo "Please run: aws configure"
     exit 1
 fi
 
-SUBSCRIPTION=$(az account show --query id -o tsv)
-echo "✓ Authenticated as: $SUBSCRIPTION"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tsv)
+echo "✓ Authenticated as Account: $ACCOUNT_ID"
 echo ""
 
 # Step 4: Terraform Init
@@ -70,17 +68,17 @@ echo ""
 
 # Step 7: Apply
 echo ""
-read -p "Ready to deploy? (yes/no): " response
+read -p "Ready to deploy to AWS? (yes/no): " response
 if [ "$response" = "yes" ]; then
-    echo "🚀 Deploying to Azure..."
+    echo "🚀 Deploying to AWS..."
     terraform apply tfplan
     
     if [ $? -eq 0 ]; then
         echo ""
         echo "✅ Deployment completed successfully!"
         echo ""
-        echo "📍 Application URLs:"
-        terraform output -json | grep -E "url|fqdn"
+        echo "📍 Resource Info:"
+        terraform output
     fi
 else
     echo "❌ Deployment cancelled"

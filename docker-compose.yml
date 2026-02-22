@@ -1,27 +1,40 @@
-version: '3.8'
-
 services:
-  backend:
+  server:
     build:
       context: ./server
-    volumes:
-      - ./server/src:/app/src
     ports:
       - "5000:5000"
+    env_file:
+      - ./server/.env
     environment:
-      - MONGO_URI=mongodb://mongo:27017/mydatabase
+      - MONGODB=mongodb://mongo:27017/Phone
+      - PORT=5000
+      - JWT_SECRET=xtj4vHGI1gMqfZP0mTKkQUeD5ASlWYzoF9ciru8VRXsJLBO6ndhbC27Np3aEyw
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - CLIENT_URL=http://localhost:3000
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:3001
     depends_on:
       - mongo
 
-  frontend:
+  client:
     build:
       context: ./client
-    volumes:
-      - ./client/src:/app/src
+      args:
+        VITE_BACKEND_URL: http://localhost:5000
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
-      - backend
+      - server
+
+  admin:
+    build:
+      context: ./admin
+      args:
+        VITE_BACKEND_URL: http://localhost:5000
+    ports:
+      - "3001:80"
+    depends_on:
+      - server
 
   mongo:
     image: mongo
@@ -32,3 +45,5 @@ services:
 
 volumes:
   mongo_data:
+
+

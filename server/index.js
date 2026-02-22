@@ -21,9 +21,13 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY, {
 app.use(cookieParser());
 app.use(express.json());
 
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",")
+  : ["http://localhost:4000", "http://localhost:3000"];
+
 app.use(
   cors({
-    origin: ["http://localhost:4000", "http://localhost:3000"],
+    origin: corsOrigins,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     credentials: true,
   })
@@ -78,7 +82,7 @@ app.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       { email: user.email, role: user.role },
-      "jwt-secret-key",
+      process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
@@ -244,8 +248,8 @@ app.post("/api/checkout", async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: "http://localhost:4000/success",
-      cancel_url: "http://localhost:4000/cart",
+      success_url: `${process.env.CLIENT_URL || "http://localhost:4000"}/success`,
+      cancel_url: `${process.env.CLIENT_URL || "http://localhost:4000"}/cart`,
     });
 
     res.json({

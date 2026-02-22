@@ -1,118 +1,172 @@
+// pipeline {
+//     agent any
+
+//     environment {
+//         DOCKER_HUB_CREDS = credentials('docker')
+//         DOCKER_USERNAME = "${DOCKER_HUB_CREDS_USR}"
+//         DOCKER_PASSWORD = "${DOCKER_HUB_CREDS_PSW}"
+//         VITE_BACKEND_URL = credentials('vite-backend-url')
+//     }
+
+//     triggers {
+//         githubPush()
+//     }
+
+//     stages {
+//         stage('Checkout Code') {
+//             steps {
+//                 checkout scmGit(
+//                     branches: [[name: 'main']],
+//                     userRemoteConfigs: [[url: 'https://github.com/Thanujan001/PhoneShop-main.git']]
+//                 )
+//             }
+//         }
+
+//         stage('Build Docker Images') {
+//             steps {
+//                 script {
+//                     docker.build("$DOCKER_USERNAME/phoneshop-server:latest", "./server")
+//                     docker.build("$DOCKER_USERNAME/phoneshop-client:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./client")
+//                     docker.build("$DOCKER_USERNAME/phoneshop-admin:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./admin")
+//                 }
+//             }
+//         }
+
+//         stage('Push Docker Images') {
+//             steps {
+//                 script {
+//                     docker.withRegistry('', 'docker') {
+//                         docker.image("$DOCKER_USERNAME/phoneshop-server:latest").push()
+//                         docker.image("$DOCKER_USERNAME/phoneshop-client:latest").push()
+//                         docker.image("$DOCKER_USERNAME/phoneshop-admin:latest").push()
+//                     }
+//                 }
+//             }
+//         }
+
+//         stage('Deploy to AWS') {
+//             steps {
+//                 script {
+//                     sh '''
+//                         # Login to ECR
+//                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+//                         # Update ECS Services
+//                         aws ecs update-service --cluster cluster-phoneshop-dev --service server --force-new-deployment
+//                         aws ecs update-service --cluster cluster-phoneshop-dev --service client --force-new-deployment
+//                         aws ecs update-service --cluster cluster-phoneshop-dev --service admin --force-new-deployment
+//                     '''
+//                 }
+//             }
+//         }
+//     }
+
+//     post {
+//         success {
+//             echo '✅ Pipeline completed successfully!'
+//         }
+//         failure {
+//             echo '❌ Pipeline failed!'
+//         }
+//     }
+// }
+
+
 pipeline {
     agent any
-    
+
     environment {
-        REGISTRY = 'docker.io'
-        REGISTRY_CREDENTIALS = 'docker-hub-credentials'
-        PROJECT_NAME = 'phoneshop'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        DOCKER_HUB_CREDS = credentials('docker')
+        DOCKER_USERNAME = "${DOCKER_HUB_CREDS_USR}"
+        DOCKER_PASSWORD = "${DOCKER_HUB_CREDS_PSW}"
+        VITE_BACKEND_URL = credentials('vite-backend-url')
     }
-    
+
+    triggers {
+        githubPush()
+    }
+
     stages {
-        stage('Checkout') {
+        stage('Cleanup Old Directories') {
             steps {
-                echo '========== Checking out code =========='
-                checkout scm
+                script {
+                    // Delete old directories if they exist
+                    sh '''
+                        rm -rf ./server
+                        rm -rf ./client
+                        rm -rf ./admin
+                    '''
+                }
             }
         }
-        
-        stage('Build') {
+
+        stage('Checkout Code') {
             steps {
-                echo '========== Building Docker images =========='
-                sh '''
-                    docker-compose build
-                '''
+                checkout scmGit(
+                    branches: [[name: 'main']],
+                    userRemoteConfigs: [[url: 'https://github.com/Thanujan001/PhoneShop-main.git']]
+                )
             }
         }
-        
-        stage('Test') {
+
+        stage('Build Docker Images') {
             steps {
-                echo '========== Running tests =========='
-                sh '''
-                    echo "Running client tests..."
-                    docker-compose run --rm frontend npm test || true
-                    
-                    echo "Running server tests..."
-                    docker-compose run --rm backend npm test || true
-                '''
+                script {
+                    docker.build("$DOCKER_USERNAME/phoneshop-server:latest", "./server")
+                    docker.build("$DOCKER_USERNAME/phoneshop-client:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./client")
+                    docker.build("$DOCKER_USERNAME/phoneshop-admin:latest", "--build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL} ./admin")
+                }
             }
         }
-        
-        stage('Start Services') {
+
+        stage('Push Docker Images') {
             steps {
-                echo '========== Starting services =========='
-                sh '''
-                    docker-compose up -d
-                    sleep 10
-                    docker-compose ps
-                '''
+                script {
+                    docker.withRegistry('', 'docker') {
+                        docker.image("$DOCKER_USERNAME/phoneshop-server:latest").push()
+                        docker.image("$DOCKER_USERNAME/phoneshop-client:latest").push()
+                        docker.image("$DOCKER_USERNAME/phoneshop-admin:latest").push()
+                    }
+                }
             }
         }
-        
-        stage('Health Check') {
+
+        stage('Deploy to AWS') {
             steps {
-                echo '========== Performing health checks =========='
-                sh '''
-                    echo "Checking backend health..."
-                    curl -f http://localhost:5000/health || true
-                    
-                    echo "Checking frontend availability..."
-                    curl -f http://localhost:3000 > /dev/null || true
-                    
-                    echo "Checking admin panel..."
-                    curl -f http://localhost:5001 > /dev/null || true
-                '''
+                script {
+                    sh '''
+                        # Login to ECR
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+                        # Update ECS Services
+                        aws ecs update-service --cluster cluster-phoneshop-dev --service server --force-new-deployment
+                        aws ecs update-service --cluster cluster-phoneshop-dev --service client --force-new-deployment
+                        aws ecs update-service --cluster cluster-phoneshop-dev --service admin --force-new-deployment
+                    '''
+                }
             }
         }
-        
-        stage('Push to Registry') {
-            when {
-                branch 'main'
-            }
+
+        stage('Final Cleanup') {
             steps {
-                echo '========== Pushing images to registry =========='
-                sh '''
-                    echo "Pushing server image..."
-                    docker tag ${PROJECT_NAME}-backend:latest ${REGISTRY}/${PROJECT_NAME}-backend:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${PROJECT_NAME}-backend:${IMAGE_TAG}
-                    
-                    echo "Pushing client image..."
-                    docker tag ${PROJECT_NAME}-frontend:latest ${REGISTRY}/${PROJECT_NAME}-frontend:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${PROJECT_NAME}-frontend:${IMAGE_TAG}
-                    
-                    echo "Pushing admin image..."
-                    docker tag ${PROJECT_NAME}-admin:latest ${REGISTRY}/${PROJECT_NAME}-admin:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${PROJECT_NAME}-admin:${IMAGE_TAG}
-                '''
-            }
-        }
-        
-        stage('Cleanup') {
-            steps {
-                echo '========== Cleaning up =========='
-                sh '''
-                    docker-compose down
-                '''
+                script {
+                    // Delete directories after pipeline finishes
+                    sh '''
+                        rm -rf ./server
+                        rm -rf ./client
+                        rm -rf ./admin
+                    '''
+                }
             }
         }
     }
-    
+
     post {
-        always {
-            echo '========== Pipeline finished =========='
-            cleanWs()
-        }
-        
         success {
-            echo '========== Build Successful =========='
+            echo '✅ Pipeline completed successfully!'
         }
-        
         failure {
-            echo '========== Build Failed =========='
-            sh '''
-                docker-compose logs
-                docker-compose down || true
-            '''
+            echo '❌ Pipeline failed!'
         }
     }
 }

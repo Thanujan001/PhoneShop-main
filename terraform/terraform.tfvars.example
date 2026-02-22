@@ -23,14 +23,14 @@ server_replicas = 2
 client_image    = "phoneshopacr.azurecr.io/client:latest"
 client_memory   = "0.5"
 client_cpu      = "0.25"
-client_port     = 3000
+client_port     = 80
 client_replicas = 2
 
 # Admin Configuration
 admin_image    = "phoneshopacr.azurecr.io/admin:latest"
 admin_memory   = "0.5"
 admin_cpu      = "0.25"
-admin_port     = 3000
+admin_port     = 80
 admin_replicas = 1
 
 # Database Configuration

@@ -1,333 +1,403 @@
 locals {
-  resource_name = "${var.project_name}-${var.environment}"
+  resource_name = "phoneshop-${var.environment}"
   
   common_tags = merge(
     var.tags,
     {
-      Project     = var.project_name
+      Project     = "phoneshop"
       Environment = var.environment
     }
   )
 }
 
-# Resource Group
-resource "azurerm_resource_group" "main" {
-  name     = "rg-${local.resource_name}"
-  location = var.location
+# --- Networking ---
 
-  tags = local.common_tags
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = merge(local.common_tags, { Name = "vpc-${local.resource_name}" })
 }
 
-# Application Insights
-resource "azurerm_application_insights" "main" {
-  name                = "appinsights-${local.resource_name}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  application_type    = "web"
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, { Name = "igw-${local.resource_name}" })
 }
 
-# Log Analytics Workspace
-resource "azurerm_log_analytics_workspace" "main" {
-  name                = "law-${local.resource_name}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  sku                 = "PerGB2018"
-  retention_in_days   = 30
+data "aws_availability_zones" "available" {}
 
-  tags = local.common_tags
+resource "aws_subnet" "public" {
+  count                   = 2
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  map_public_ip_on_launch = true
+
+  tags = merge(local.common_tags, { Name = "public-subnet-${count.index}-${local.resource_name}" })
 }
 
-# Container Registry
-resource "azurerm_container_registry" "main" {
-  name                = replace("${var.container_registry_name}${var.environment}", "-", "")
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  sku                 = "Basic"
-  admin_enabled       = true
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
 
-  tags = local.common_tags
-}
-
-# Azure Cosmos DB for MongoDB
-resource "azurerm_cosmosdb_account" "mongodb" {
-  name                      = "cosmosdb-${local.resource_name}"
-  location                  = azurerm_resource_group.main.location
-  resource_group_name       = azurerm_resource_group.main.name
-  offer_type                = "Standard"
-  kind                      = "MongoDB"
-  consistency_policy {
-    consistency_level       = "Session"
-    max_interval_in_seconds = 5
-    max_staleness_prefix    = 100
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
   }
 
-  capabilities {
-    name = "EnableMongo"
-  }
-
-  geo_location {
-    location          = azurerm_resource_group.main.location
-    failover_priority = 0
-  }
-
-  tags = local.common_tags
+  tags = merge(local.common_tags, { Name = "public-rt-${local.resource_name}" })
 }
 
-# Cosmos DB MongoDB Database
-resource "azurerm_cosmosdb_mongo_database" "main" {
-  account_name        = azurerm_cosmosdb_account.mongodb.name
-  resource_group_name = azurerm_resource_group.main.name
-  name                = var.mongodb_database_name
+resource "aws_route_table_association" "public" {
+  count          = 2
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
 }
 
-# Key Vault
-resource "azurerm_key_vault" "main" {
-  name                = "kv-${replace(local.resource_name, "-", "")}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  sku_name            = "standard"
+# --- Security Groups ---
 
-  enable_for_deployment          = true
-  enable_for_template_deployment = true
-  enable_for_disk_encryption     = false
-  purge_protection_enabled       = false
-
-  tags = local.common_tags
-}
-
-# Key Vault Access Policy
-resource "azurerm_key_vault_access_policy" "main" {
-  key_vault_id = azurerm_key_vault.main.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = data.azurerm_client_config.current.object_id
-
-  secret_permissions = [
-    "Backup",
-    "Delete",
-    "Get",
-    "List",
-    "Purge",
-    "Recover",
-    "Restore",
-    "Set"
-  ]
-}
-
-# Store MongoDB connection string in Key Vault
-resource "azurerm_key_vault_secret" "mongo_uri" {
-  name            = "mongo-uri"
-  value           = "mongodb+srv://${var.mongodb_admin_username}:${var.mongodb_admin_password}@${azurerm_cosmosdb_account.mongodb.name}.mongo.cosmos.azure.com:10255/?ssl=true&retrywrites=false&maxIdleTimeMS=120000"
-  key_vault_id    = azurerm_key_vault.main.id
-  depends_on      = [azurerm_key_vault_access_policy.main]
-}
-
-# Store Stripe API Key in Key Vault
-resource "azurerm_key_vault_secret" "stripe_key" {
-  count       = var.stripe_api_key != "" ? 1 : 0
-  name        = "stripe-api-key"
-  value       = var.stripe_api_key
-  key_vault_id = azurerm_key_vault.main.id
-  depends_on  = [azurerm_key_vault_access_policy.main]
-}
-
-# Store JWT Secret in Key Vault
-resource "azurerm_key_vault_secret" "jwt_secret" {
-  count       = var.jwt_secret != "" ? 1 : 0
-  name        = "jwt-secret"
-  value       = var.jwt_secret
-  key_vault_id = azurerm_key_vault.main.id
-  depends_on  = [azurerm_key_vault_access_policy.main]
-}
-
-# Container Apps Environment
-resource "azurerm_container_app_environment" "main" {
-  name                            = "cae-${local.resource_name}"
-  location                        = azurerm_resource_group.main.location
-  resource_group_name             = azurerm_resource_group.main.name
-  log_analytics_workspace_id      = azurerm_log_analytics_workspace.main.id
-
-  tags = local.common_tags
-}
-
-# Backend Server Container App
-resource "azurerm_container_app" "server" {
-  name                         = "server-${local.resource_name}"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "server"
-      image  = var.server_image
-      memory = "${var.server_memory}Gi"
-      cpu    = var.server_cpu
-
-      env {
-        name  = "MONGO_URI"
-        secret_ref = "mongo-uri"
-      }
-
-      env {
-        name  = "PORT"
-        value = var.server_port
-      }
-
-      dynamic "env" {
-        for_each = var.stripe_api_key != "" ? [1] : []
-        content {
-          name  = "STRIPE_API_KEY"
-          secret_ref = "stripe-key"
-        }
-      }
-
-      dynamic "env" {
-        for_each = var.jwt_secret != "" ? [1] : []
-        content {
-          name       = "JWT_SECRET"
-          secret_ref = "jwt-secret"
-        }
-      }
-
-      port {
-        container_port = var.server_port
-        protocol       = "TCP"
-      }
-    }
-
-    min_replicas = 1
-    max_replicas = var.server_replicas
-  }
-
-  secret {
-    name  = "mongo-uri"
-    value = azurerm_key_vault_secret.mongo_uri.value
-  }
-
-  dynamic "secret" {
-    for_each = var.stripe_api_key != "" ? [1] : []
-    content {
-      name  = "stripe-key"
-      value = var.stripe_api_key
-    }
-  }
-
-  dynamic "secret" {
-    for_each = var.jwt_secret != "" ? [1] : []
-    content {
-      name  = "jwt-secret"
-      value = var.jwt_secret
-    }
-  }
+resource "aws_security_group" "alb" {
+  name        = "alb-sg-${local.resource_name}"
+  description = "Allow HTTP inbound traffic"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    allow_insecure_connections = false
-    external_enabled           = true
-    target_port                = var.server_port
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = local.common_tags
-
-  depends_on = [
-    azurerm_cosmosdb_mongo_database.main,
-    azurerm_key_vault_secret.mongo_uri
-  ]
 }
 
-# Client Container App
-resource "azurerm_container_app" "client" {
-  name                         = "client-${local.resource_name}"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
-
-  template {
-    container {
-      name   = "client"
-      image  = var.client_image
-      memory = "${var.client_memory}Gi"
-      cpu    = var.client_cpu
-
-      env {
-        name  = "VITE_API_URL"
-        value = azurerm_container_app.server.ingress[0].fqdn
-      }
-
-      port {
-        container_port = var.client_port
-        protocol       = "TCP"
-      }
-    }
-
-    min_replicas = 1
-    max_replicas = var.client_replicas
-  }
+resource "aws_security_group" "ecs_tasks" {
+  name        = "ecs-tasks-sg-${local.resource_name}"
+  description = "Allow inbound access from ALB only"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    allow_insecure_connections = false
-    external_enabled           = true
-    target_port                = var.client_port
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = local.common_tags
-
-  depends_on = [azurerm_container_app.server]
 }
 
-# Admin Dashboard Container App
-resource "azurerm_container_app" "admin" {
-  name                         = "admin-${local.resource_name}"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
+# --- Load Balancer ---
 
-  template {
-    container {
-      name   = "admin"
-      image  = var.admin_image
-      memory = "${var.admin_memory}Gi"
-      cpu    = var.admin_cpu
-
-      env {
-        name  = "VITE_API_URL"
-        value = azurerm_container_app.server.ingress[0].fqdn
-      }
-
-      port {
-        container_port = var.admin_port
-        protocol       = "TCP"
-      }
-    }
-
-    min_replicas = 1
-    max_replicas = var.admin_replicas
-  }
-
-  ingress {
-    allow_insecure_connections = false
-    external_enabled           = true
-    target_port                = var.admin_port
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+resource "aws_lb" "main" {
+  name               = "alb-${local.resource_name}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
 
   tags = local.common_tags
-
-  depends_on = [azurerm_container_app.server]
 }
 
-# Data source for current Azure client config
-data "azurerm_client_config" "current" {}
+# Server Target Group & Listener Rule
+resource "aws_lb_target_group" "server" {
+  name        = "server-tg-${local.resource_name}"
+  port        = var.server_port
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path = "/"
+    port = var.server_port
+  }
+}
+
+# Client Target Group
+resource "aws_lb_target_group" "client" {
+  name        = "client-tg-${local.resource_name}"
+  port        = var.client_port
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path = "/"
+    port = var.client_port
+  }
+}
+
+# Admin Target Group
+resource "aws_lb_target_group" "admin" {
+  name        = "admin-tg-${local.resource_name}"
+  port        = var.admin_port
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path = "/"
+    port = var.admin_port
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not Found"
+      status_code  = "404"
+    }
+  }
+}
+
+# Routing rules (simplified for first pass)
+resource "aws_lb_listener_rule" "client" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.client.arn
+  }
+
+  condition {
+    host_header {
+      values = ["client.*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "admin" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 200
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.admin.arn
+  }
+
+  condition {
+    host_header {
+      values = ["admin.*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "server" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 300
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.server.arn
+  }
+
+  condition {
+    host_header {
+      values = ["api.*"]
+    }
+  }
+}
+
+# --- ECR Repositories ---
+
+resource "aws_ecr_repository" "server" {
+  name = "phoneshop-server"
+  tags = local.common_tags
+}
+
+resource "aws_ecr_repository" "client" {
+  name = "phoneshop-client"
+  tags = local.common_tags
+}
+
+resource "aws_ecr_repository" "admin" {
+  name = "phoneshop-admin"
+  tags = local.common_tags
+}
+
+# --- ECS Cluster ---
+
+resource "aws_ecs_cluster" "main" {
+  name = "cluster-${local.resource_name}"
+  tags = local.common_tags
+}
+
+# IAM Roles for ECS
+resource "aws_iam_role" "ecs_execution" {
+  name = "ecsExecutionRole-${local.resource_name}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution" {
+  role       = aws_iam_role.ecs_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# --- ECS Services (Server) ---
+
+resource "aws_ecs_task_definition" "server" {
+  family                   = "server"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+
+  container_definitions = jsonencode([{
+    name      = "server"
+    image     = "${aws_ecr_repository.server.repository_url}:latest"
+    essential = true
+    portMappings = [{
+      containerPort = var.server_port
+      hostPort      = var.server_port
+    }]
+    environment = [
+      { name = "PORT", value = tostring(var.server_port) },
+      { name = "JWT_SECRET", value = var.jwt_secret },
+      { name = "STRIPE_SECRET_KEY", value = var.stripe_api_key }
+    ]
+  }])
+}
+
+resource "aws_ecs_service" "server" {
+  name            = "server"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.server.arn
+  launch_type     = "FARGATE"
+  desired_count   = var.server_replicas
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.server.arn
+    container_name   = "server"
+    container_port   = var.server_port
+  }
+
+  depends_on = [aws_lb_listener.http]
+}
+
+# --- ECS Services (Client) ---
+
+resource "aws_ecs_task_definition" "client" {
+  family                   = "client"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+
+  container_definitions = jsonencode([{
+    name      = "client"
+    image     = "${aws_ecr_repository.client.repository_url}:latest"
+    essential = true
+    portMappings = [{
+      containerPort = var.client_port
+      hostPort      = var.client_port
+    }]
+    environment = [
+       { name = "VITE_BACKEND_URL", value = "http://${aws_lb.main.dns_name}" }
+    ]
+  }])
+}
+
+resource "aws_ecs_service" "client" {
+  name            = "client"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.client.arn
+  launch_type     = "FARGATE"
+  desired_count   = var.client_replicas
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.client.arn
+    container_name   = "client"
+    container_port   = var.client_port
+  }
+
+  depends_on = [aws_lb_listener.http]
+}
+
+# --- ECS Services (Admin) ---
+
+resource "aws_ecs_task_definition" "admin" {
+  family                   = "admin"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+
+  container_definitions = jsonencode([{
+    name      = "admin"
+    image     = "${aws_ecr_repository.admin.repository_url}:latest"
+    essential = true
+    portMappings = [{
+      containerPort = var.admin_port
+      hostPort      = var.admin_port
+    }]
+    environment = [
+       { name = "VITE_BACKEND_URL", value = "http://${aws_lb.main.dns_name}" }
+    ]
+  }])
+}
+
+resource "aws_ecs_service" "admin" {
+  name            = "admin"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.admin.arn
+  launch_type     = "FARGATE"
+  desired_count   = var.admin_replicas
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.admin.arn
+    container_name   = "admin"
+    container_port   = var.admin_port
+  }
+
+  depends_on = [aws_lb_listener.http]
+}

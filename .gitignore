@@ -16,6 +16,7 @@ coverage/
 # Environment
 .env
 .env.local
+.env.production
 .env.*.local
 
 # OS files
@@ -33,3 +34,11 @@ logs/
 # Docker / misc
 docker-compose.override.yml
 .envrc
+
+# Terraform
+terraform.tfvars
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+tfplan

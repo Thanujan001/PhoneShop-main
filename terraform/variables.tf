@@ -1,31 +1,25 @@
-variable "subscription_id" {
-  description = "Azure Subscription ID"
+variable "aws_region" {
+  description = "AWS region for resources"
   type        = string
-  sensitive   = true
+  default     = "us-east-1"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for VPC"
+  type        = string
+  default     = "10.0.0.0/16"
 }
 
 variable "project_name" {
-  description = "Project name used for resource naming"
+  description = "Project name"
   type        = string
   default     = "phoneshop"
 }
 
 variable "environment" {
-  description = "Environment name (dev, staging, prod)"
+  description = "Environment name"
   type        = string
   default     = "dev"
-}
-
-variable "location" {
-  description = "Azure region for resources"
-  type        = string
-  default     = "eastus"
-}
-
-variable "container_registry_name" {
-  description = "Name of the Azure Container Registry"
-  type        = string
-  default     = "phoneshopacr"
 }
 
 variable "docker_image_tag" {
@@ -85,7 +79,7 @@ variable "client_cpu" {
 variable "client_port" {
   description = "Port for client"
   type        = number
-  default     = 3000
+  default     = 80
 }
 
 variable "client_replicas" {
@@ -115,7 +109,7 @@ variable "admin_cpu" {
 variable "admin_port" {
   description = "Port for admin"
   type        = number
-  default     = 3000
+  default     = 80
 }
 
 variable "admin_replicas" {

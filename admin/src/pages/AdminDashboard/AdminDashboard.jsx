@@ -53,7 +53,7 @@ function AdminDashboard() {
     <>
       <div className="bg-[#d9d9d9] min-h-screen py-20">
         <h1 className="text-center text-3xl font-semibold text-red-800 mb-12">
-          Product Details
+          Thanujan
         </h1>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-14 gap-y-10 px-6 max-w-6xl mx-auto">
