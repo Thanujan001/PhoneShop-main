@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_CREDS = credentials('docker-hub')   // Single Docker Hub credential ID
-        VITE_BACKEND_URL = credentials('vite-backend-url') // Your backend URL credential ID
+        DOCKER_CREDS = credentials('docker-hub')   // Docker Hub credential ID
     }
 
     triggers {
@@ -30,10 +29,12 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 sh '''
-                    echo "Building Docker images..."
+                    echo "Building backend..."
                     docker compose build server
-                    docker compose build client --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL}
-                    docker compose build admin --build-arg VITE_BACKEND_URL=${VITE_BACKEND_URL}
+
+                    echo "Building frontend with backend container URL..."
+                    docker compose build client --build-arg VITE_BACKEND_URL=http://server:3000
+                    docker compose build admin --build-arg VITE_BACKEND_URL=http://server:3000
                 '''
             }
         }
