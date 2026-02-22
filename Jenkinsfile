@@ -6,8 +6,6 @@ pipeline {
         DOCKER_USERNAME = "${DOCKER_HUB_CREDS_USR}"
         DOCKER_PASSWORD = "${DOCKER_HUB_CREDS_PSW}"
         VITE_BACKEND_URL = credentials('vite-backend-url')
-        AWS_REGION = credentials('aws-region')   // make sure you have this credential
-        ECR_REGISTRY = credentials('ecr-registry') // make sure you have this too
     }
 
     triggers {
@@ -18,12 +16,10 @@ pipeline {
 
         stage('Cleanup Old Directories') {
             steps {
-                script {
-                    sh '''
-                        echo "Cleaning old directories..."
-                        rm -rf ./server ./client ./admin
-                    '''
-                }
+                sh '''
+                    echo "Cleaning old directories..."
+                    rm -rf ./server ./client ./admin
+                '''
             }
         }
 
@@ -65,30 +61,12 @@ pipeline {
             }
         }
 
-        stage('Deploy to AWS ECS') {
-            steps {
-                script {
-                    sh '''
-                        echo "Logging in to AWS ECR..."
-                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-
-                        echo "Updating ECS services..."
-                        aws ecs update-service --cluster cluster-phoneshop-dev --service server --force-new-deployment
-                        aws ecs update-service --cluster cluster-phoneshop-dev --service client --force-new-deployment
-                        aws ecs update-service --cluster cluster-phoneshop-dev --service admin --force-new-deployment
-                    '''
-                }
-            }
-        }
-
         stage('Final Cleanup') {
             steps {
-                script {
-                    sh '''
-                        echo "Cleaning workspace directories..."
-                        rm -rf ./server ./client ./admin
-                    '''
-                }
+                sh '''
+                    echo "Cleaning workspace directories..."
+                    rm -rf ./server ./client ./admin
+                '''
             }
         }
     }
