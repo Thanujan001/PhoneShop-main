@@ -35,8 +35,12 @@ pipeline {
         stage('📦 Install Node.js') {
             steps {
                 sh '''
-                    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-                    sudo apt-get install -y nodejs
+                    wget https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.xz
+                    tar -xf node-v18.17.0-linux-x64.tar.xz
+                    export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH
+                    echo "export PATH=$PWD/node-v18.17.0-linux-x64/bin:$PATH" >> ~/.bashrc
+                    node --version
+                    npm --version
                 '''
             }
         }
@@ -46,21 +50,21 @@ pipeline {
                 stage('Server') {
                     steps {
                         dir('server') {
-                            sh 'npm install'
+                            sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm install'
                         }
                     }
                 }
                 stage('Client') {
                     steps {
                         dir('client') {
-                            sh 'npm install'
+                            sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm install'
                         }
                     }
                 }
                 stage('Admin') {
                     steps {
                         dir('admin') {
-                            sh 'npm install'
+                            sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm install'
                         }
                     }
                 }
@@ -70,7 +74,7 @@ pipeline {
         stage('🧪 Run Tests') {
             steps {
                 dir('client') {
-                    sh 'npm test -- --run'
+                    sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm test -- --run'
                 }
             }
         }
@@ -80,14 +84,14 @@ pipeline {
                 stage('Client Build') {
                     steps {
                         dir('client') {
-                            sh 'npm run build'
+                            sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm run build'
                         }
                     }
                 }
                 stage('Admin Build') {
                     steps {
                         dir('admin') {
-                            sh 'npm run build'
+                            sh 'export PATH=$WORKSPACE/node-v18.17.0-linux-x64/bin:$PATH && npm run build'
                         }
                     }
                 }
