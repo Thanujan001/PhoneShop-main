@@ -37,21 +37,21 @@ pipeline {
                 stage('Server') {
                     steps {
                         dir('server') {
-                            bat 'npm install'
+                            sh 'npm install'
                         }
                     }
                 }
                 stage('Client') {
                     steps {
                         dir('client') {
-                            bat 'npm install'
+                            sh 'npm install'
                         }
                     }
                 }
                 stage('Admin') {
                     steps {
                         dir('admin') {
-                            bat 'npm install'
+                            sh 'npm install'
                         }
                     }
                 }
@@ -61,7 +61,7 @@ pipeline {
         stage('🧪 Run Tests') {
             steps {
                 dir('client') {
-                    bat 'npm test -- --run'
+                    sh 'npm test -- --run'
                 }
             }
         }
@@ -71,14 +71,14 @@ pipeline {
                 stage('Client Build') {
                     steps {
                         dir('client') {
-                            bat 'npm run build'
+                            sh 'npm run build'
                         }
                     }
                 }
                 stage('Admin Build') {
                     steps {
                         dir('admin') {
-                            bat 'npm run build'
+                            sh 'npm run build'
                         }
                     }
                 }
@@ -87,45 +87,45 @@ pipeline {
 
         stage('🐳 Build Docker Images') {
             steps {
-                bat '''
+                sh '''
                     echo "Building server image..."
-                    docker build -t %SERVER_IMAGE%:%TAG% ./server
+                    docker build -t $SERVER_IMAGE:$TAG ./server
 
                     echo "Building client image..."
-                    docker build -t %CLIENT_IMAGE%:%TAG% ./client
+                    docker build -t $CLIENT_IMAGE:$TAG ./client
 
                     echo "Building admin image..."
-                    docker build -t %ADMIN_IMAGE%:%TAG% ./admin
+                    docker build -t $ADMIN_IMAGE:$TAG ./admin
                 '''
             }
         }
 
         stage('🔐 Login to Docker Hub') {
             steps {
-                bat '''
-                    echo %DOCKER_CREDS_PSW% | docker login -u %DOCKER_CREDS_USR% --password-stdin
+                sh '''
+                    echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin
                 '''
             }
         }
 
         stage('📤 Push Docker Images') {
             steps {
-                bat '''
+                sh '''
                     echo "Pushing server..."
-                    docker push %SERVER_IMAGE%:%TAG%
+                    docker push $SERVER_IMAGE:$TAG
 
                     echo "Pushing client..."
-                    docker push %CLIENT_IMAGE%:%TAG%
+                    docker push $CLIENT_IMAGE:$TAG
 
                     echo "Pushing admin..."
-                    docker push %ADMIN_IMAGE%:%TAG%
+                    docker push $ADMIN_IMAGE:$TAG
                 '''
             }
         }
 
         stage('🧹 Cleanup') {
             steps {
-                bat '''
+                sh '''
                     docker logout
                     docker system prune -f
                 '''
